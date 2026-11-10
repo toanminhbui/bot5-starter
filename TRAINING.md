@@ -19,10 +19,6 @@ the starter repository:
 ./bot5 test my_bot.bot.json --seconds 2
 ```
 
-Supported computers are x86-64 Linux with glibc 2.38+ (including Ubuntu 24.04 in
-Windows WSL2), or Apple Silicon Macs with macOS 15+. The tools download the
-compiler, engine, WASM runtime, and Python automatically.
-
 The example controller holds the joint angles measured at reset. It returns:
 
 ```text
@@ -59,10 +55,9 @@ start a longer experiment in a **new** directory:
 | `--source` | Repository's `my_bot.cpp` | Another C++ controller accepting `kp` and `kd` configuration. |
 | `--output` | Unique directory under `runs/` | A directory that does not already exist. |
 
-Run `./bot5 python learn.py --help` for the available options. There are no
-`--resume`, `--profile`, `--opponent`, or GPU options in this script.
-A new invocation starts a fresh search. Copy a controller or edit the Python
-script in the starter repository, rather than the cached tools under `.bot5/`.
+Run `./bot5 python learn.py --help` for the available options.
+Each invocation starts a fresh search. Edit the controller and learning script
+in the starter repository, rather than the cached tools under `.bot5/`.
 
 ## 3. Understand what happens in a run
 
@@ -87,10 +82,9 @@ With the default seed lists, `N` trials require `2 × N + 2` bouts. For 50
 trials at 10 seconds, that is up to 1,020 simulated seconds, plus compilation
 and process startup. Wall-clock time depends on your computer and controller.
 
-There are no gradients or neural-network updates. The WASM module stays fixed
-throughout a run; only packaged configuration changes. The first trial wins
-ties, so a short task on which every candidate stays upright may keep the
-baseline. Held-out validity does not require an improved reward.
+The first trial wins ties, so a short task on which every candidate stays
+upright may keep the baseline. Held-out validity does not require an improved
+reward.
 
 ## 4. Read the results before uploading
 
@@ -113,7 +107,7 @@ runs/balance-001/
 - `results.json` records the baseline training reward, selected candidate,
   held-out results, source hash, seeds, and episode duration.
 - `best.bot.json` contains the compiled controller and winning configuration.
-  Each run assigns fresh upload versions. It is not a training checkpoint.
+  Each run assigns fresh upload versions.
 
 Print the main measurements with the included Python:
 
@@ -150,9 +144,6 @@ finite torque output, joint ordering, and torque caps intact. Keep accepting
 
 The next run recompiles the source. Do not edit that source while a run is
 active: the script checks its hash and rejects a changed source at the end.
-
-Changing the reward cannot create actions absent from the controller. Searching
-the two gains of a pose-holding controller will not invent walking or punches.
 
 ### Parameter ranges and exploration: edit search()
 
@@ -223,7 +214,7 @@ Whenever you change the reward, also update the report's `reward` description
 and the console strings containing "upright seconds". Use a new output directory
 and compare only runs with matching reward definitions and durations.
 
-### Seeds, body, and opponent
+### Seeds and body
 
 To increase evaluation coverage, edit `training_seeds` and `held_out_seeds` in
 `search()`. Keep both lists nonempty and disjoint, stay within unsigned 64-bit
@@ -234,10 +225,6 @@ initial build command in `search()`. Every candidate inherits that package's
 profile. Train and evaluate the chosen body instead of relabeling a finished
 package.
 
-Changing opponents requires runner support that is not currently exposed.
-This guide does not provide arena-opponent selection, self-play, or a local
-two-package match command.
-
 ## 6. Test and upload the selected package
 
 ```sh
@@ -245,16 +232,14 @@ two-package match command.
   --frames runs/balance-001/replay.jsonl
 ```
 
-This tests longer on another seed and saves replay frames. `--frames` writes
-JSON lines; it does **not** open a visual viewer. The local test still uses the
-scripted guard. The new seed was not part of the example search above.
+This tests longer on a seed outside the example search and saves replay frames.
+`--frames` writes JSON lines; it does not open a visual viewer.
 
 Sign in at [bot5.tbui.dev](https://bot5.tbui.dev), verify your email, and upload
 the same tested `runs/balance-001/best.bot.json`. Do not rebuild the original
 source with default settings to submit the winner: that would discard its
-selected configuration. Build/test success and upright reward do not establish
-competitive fighting performance. Use the arena's fight creation flow to
-evaluate against available arena bots.
+selected configuration. Use the arena's fight creation flow to evaluate
+against available arena bots.
 
 ## 7. Troubleshooting
 
@@ -266,17 +251,3 @@ evaluate against available arena bots.
 | No best.bot.json | The run may be interrupted, all candidates may be invalid, or held-out validity/source checks may have failed. Inspect logs and `results.json` if present. |
 | All scores are equal | The task may saturate the reward, the horizon may be too short, or the parameters may not affect behavior. Check before increasing trial count. |
 | Search takes too long | Reduce trials or duration for debugging. Bouts execute sequentially; there is no worker-count option. |
-| Rewards improve but fighting does not | Upright time measures posture. Add useful behavior and an appropriate measured objective before expecting combat gains. |
-
-## What full neural-network RL would require
-
-A neural-network RL workflow would additionally need an environment exposing
-observations, actions, per-step rewards, resets, and termination; a training
-algorithm and policy network; checkpoint saving/resuming; opponent and
-evaluation management; and an exporter that embeds compatible inference code
-and learned weights into the WASM controller.
-
-Those pieces are not supplied by `learn.py`. Python training runs outside the
-uploaded controller; uploading a Python script or checkpoint does not make it
-executable in the arena. The current parameter search is a working starting
-point for learning how controller behavior, rewards, and evaluation fit together.
