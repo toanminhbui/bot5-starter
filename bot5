@@ -1,0 +1,173 @@
+#!/bin/sh
+# Bootstrap the pinned creator kit without requiring a system Python or compiler.
+set -eu
+umask 077
+
+fail() { printf '%s\n' "bot5: $*" >&2; exit 1; }
+repo_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd -P)
+
+usage() {
+  cat <<'EOF'
+Usage:
+  ./bot5 setup                    Download the engine and compiler once
+  ./bot5 build my_bot.cpp         Compile C++ into an uploadable .bot.json
+  ./bot5 test my_bot.bot.json     Test that package in WebAssembly
+  ./bot5 python learn.py          Run a script with the included Python
+
+Build and test prepare the tools automatically when needed.
+Linux/WSL2: Ubuntu 24.04 or compatible x86-64 Linux (glibc 2.38+).
+Mac: Apple Silicon with macOS 15+.
+EOF
+}
+
+command_name=${1:-help}
+case "$command_name" in
+  help|-h|--help) usage; exit 0 ;;
+  setup|build|test|verify|python) shift ;;
+  *) usage >&2; fail "Unknown command: $command_name" ;;
+esac
+
+local_archive=
+if [ "$command_name" = setup ]; then
+  case $# in
+    0) ;;
+    2) [ "$1" = --archive ] || fail 'Use ./bot5 setup [--archive PATH].'
+       local_archive=$2
+       [ -f "$local_archive" ] || fail 'The local release archive does not exist.' ;;
+    *) fail 'Use ./bot5 setup [--archive PATH].' ;;
+  esac
+fi
+
+system_name=$(uname -s)
+machine_name=$(uname -m)
+case "$system_name/$machine_name" in
+  Linux/x86_64|Linux/amd64)
+    kit_platform=linux-x86_64
+    libc_version=$(getconf GNU_LIBC_VERSION 2>/dev/null || true)
+    printf '%s\n' "$libc_version" | awk '
+      $1 == "glibc" { split($2, v, "."); if (v[1] > 2 || (v[1] == 2 && v[2] >= 38)) exit 0 }
+      { exit 1 }
+    ' || fail 'Use Ubuntu 24.04 or compatible Linux with glibc 2.38 or newer. On Windows, use WSL2.'
+    ;;
+  Darwin/arm64|Darwin/aarch64)
+    kit_platform=macos-arm64
+    mac_version=$(sw_vers -productVersion)
+    mac_major=${mac_version%%.*}
+    case "$mac_major" in ''|*[!0-9]*) fail 'Could not determine the macOS version.' ;; esac
+    [ "$mac_major" -ge 15 ] || fail 'This kit requires macOS 15 or newer.'
+    ;;
+  *) fail 'Use Linux/WSL2 x86-64 or an Apple Silicon Mac. Run this command inside WSL2 on Windows.' ;;
+esac
+
+descriptor="$repo_dir/sdk-release.tsv"
+[ -f "$descriptor" ] && [ ! -L "$descriptor" ] || fail 'The pinned SDK release descriptor is missing. Clone the complete starter repository.'
+record=$(awk -F '\t' -v selected="$kit_platform" '
+  NR == 1 { if ($0 != "bot5_starter_release_v1") exit 1; next }
+  NF == 0 { next }
+  {
+    if (NF != 4 || ($1 != "linux-x86_64" && $1 != "macos-arm64") || seen[$1]++ ||
+        $2 !~ /^https:\/\/[^[:space:]]+$/ || length($3) != 64 || $3 ~ /[^a-f0-9]/ ||
+        $4 !~ /^[0-9]+$/ || length($4) > 9 || $4 + 0 < 1 || $4 + 0 > 536870912) exit 1;
+    if ($1 == selected) result = $2 "\t" $3 "\t" $4
+  }
+  END { if (result != "") print result }
+' "$descriptor") || fail 'The SDK release descriptor is invalid. Pull a fresh copy of the starter repository.'
+[ -n "$record" ] || fail 'The verified SDK release for this computer has not been published yet. The repository maintainer must publish it before setup can run.'
+tab=$(printf '\t')
+download_url=${record%%"$tab"*}
+record=${record#*"$tab"}
+expected_sha=${record%%"$tab"*}
+expected_bytes=${record#*"$tab"}
+
+cache="$repo_dir/.bot5"
+[ ! -L "$cache" ] || fail 'The .bot5 tools directory must not be a symlink.'
+mkdir -p "$cache"
+installation="$cache/$kit_platform-$expected_sha"
+[ ! -L "$installation" ] || fail 'The installed tools directory must not be a symlink.'
+kit="$installation/bot5-creator-sdk"
+
+if [ ! -f "$installation/READY" ]; then
+  for tool in tar awk mktemp wc; do
+    command -v "$tool" >/dev/null 2>&1 || fail "The standard system tool $tool is missing."
+  done
+  if command -v sha256sum >/dev/null 2>&1; then
+    hash_program=sha256sum
+  elif command -v shasum >/dev/null 2>&1; then
+    hash_program=shasum
+  else
+    fail 'A SHA-256 tool is required: sha256sum on Linux or shasum on macOS.'
+  fi
+  lock="$cache/.setup-lock"
+  mkdir "$lock" 2>/dev/null || fail 'Another setup is running. If it was interrupted, remove .bot5/.setup-lock and try again.'
+  stage=
+  cleanup() {
+    if [ -n "$stage" ]; then rm -rf -- "$stage"; fi
+    rmdir "$lock" 2>/dev/null || true
+  }
+  trap cleanup EXIT
+  trap 'exit 130' INT
+  trap 'exit 143' TERM HUP
+  stage=$(mktemp -d "$cache/.setup.XXXXXXXX")
+  archive="$stage/sdk.tar.gz"
+  if [ -n "$local_archive" ]; then
+    printf '%s\n' 'Checking the local engine and compiler archive...'
+    cp -- "$local_archive" "$archive"
+  else
+    command -v curl >/dev/null 2>&1 || fail 'curl is required to download the tools. Use ./bot5 setup --archive PATH if you already have the pinned SDK tar.gz.'
+    printf '%s\n' 'Downloading the engine and compiler (first run only)...'
+    curl -q --fail --location --proto '=https' --proto-redir '=https' \
+      --retry 2 --connect-timeout 20 --max-time 900 \
+      --output "$archive" --url "$download_url" || fail 'The SDK download failed. Check your connection and run ./bot5 setup again.'
+  fi
+  actual_bytes=$(wc -c < "$archive" | tr -d '[:space:]')
+  [ "$actual_bytes" = "$expected_bytes" ] || fail 'The SDK archive has the wrong size. No tools were installed.'
+  if [ "$hash_program" = sha256sum ]; then
+    actual_sha=$(sha256sum "$archive")
+  else
+    actual_sha=$(shasum -a 256 "$archive")
+  fi
+  actual_sha=${actual_sha%% *}
+  [ "$actual_sha" = "$expected_sha" ] || fail 'The SDK checksum does not match the pinned release. No tools were installed.'
+
+  # Only regular files/directories under the fixed SDK root may be extracted.
+  tar -tzf "$archive" > "$stage/members" || fail 'The SDK archive could not be read.'
+  awk '
+    NR > 100000 || length($0) > 1024 || index($0, "bot5-creator-sdk/") != 1 ||
+      $0 ~ /(^|\/)\.\.?($|\/)/ || $0 ~ /[\\[:cntrl:]]/ || $0 ~ /\/\// || seen[$0]++ { exit 1 }
+    END { if (NR == 0) exit 1 }
+  ' "$stage/members" || fail 'The SDK archive contains an unsafe path.'
+  tar -tvzf "$archive" > "$stage/member-types" || fail 'The SDK archive could not be inspected.'
+  awk '(substr($0, 1, 1) != "-" && substr($0, 1, 1) != "d") || substr($0, 2, 9) ~ /[sStT]/ { exit 1 }' \
+    "$stage/member-types" || fail 'The SDK archive contains links or special files.'
+  mkdir "$stage/extracted"
+  tar -xzf "$archive" --no-same-owner --no-same-permissions -C "$stage/extracted" || fail 'The SDK archive could not be extracted.'
+  extracted="$stage/extracted/bot5-creator-sdk"
+  [ -f "$extracted/bot5" ] && [ -f "$extracted/bot.py" ] && \
+    [ -f "$extracted/CREATOR_MANIFEST.json" ] && \
+    [ -f "$extracted/runtime/python/bin/python3.12" ] || fail 'The SDK archive is incomplete.'
+  chmod u+x "$extracted/bot5" "$extracted/runtime/python/bin/python3.12"
+  # --help verifies that the bundled interpreter can run on this computer.
+  sh "$extracted/bot5" --help >/dev/null || fail 'The bundled runtime could not start on this computer.'
+  printf '%s\n' "$expected_sha" > "$stage/extracted/READY"
+  [ ! -e "$installation" ] || fail 'A previous installation is incomplete. Remove .bot5 and run setup again.'
+  mv -- "$stage/extracted" "$installation"
+  cleanup
+  stage=
+  trap - EXIT INT TERM HUP
+fi
+
+[ -d "$kit" ] && [ ! -L "$kit" ] && [ ! -L "$kit/bot5" ] && \
+  [ -f "$kit/bot5" ] && [ -f "$kit/runtime/python/bin/python3.12" ] || \
+  fail 'The installed tools are incomplete. Remove .bot5 and run setup again.'
+
+case "$command_name" in
+  setup) printf '%s\n' 'Ready. Run ./bot5 build my_bot.cpp, then ./bot5 test my_bot.bot.json.' ;;
+  python)
+    case "$system_name" in
+      Linux) export LD_LIBRARY_PATH="$kit/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" ;;
+      Darwin) export DYLD_FALLBACK_LIBRARY_PATH="$kit/lib${DYLD_FALLBACK_LIBRARY_PATH:+:$DYLD_FALLBACK_LIBRARY_PATH}" ;;
+    esac
+    exec "$kit/runtime/python/bin/python3.12" -I -B -X utf8 "$@"
+    ;;
+  *) exec sh "$kit/bot5" "$command_name" "$@" ;;
+esac

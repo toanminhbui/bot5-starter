@@ -1,0 +1,8 @@
+.bot5/
+runs/
+*.bot.json
+*.wasm
+*.jsonl
+creator-verification.json
+__pycache__/
+.DS_Store

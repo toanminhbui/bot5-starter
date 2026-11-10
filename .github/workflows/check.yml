@@ -1,0 +1,45 @@
+name: Starter quickstart
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  quickstart:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-24.04
+            platform: linux-x86_64
+          - os: macos-15
+            platform: macos-arm64
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@9f698171ed81b15d1823a05fc7211befd50c8ae0
+        with:
+          persist-credentials: false
+      - name: Check for a published platform release
+        id: release
+        env:
+          PLATFORM: ${{ matrix.platform }}
+        run: |
+          if awk -F '\t' -v platform="$PLATFORM" '$1 == platform { found=1 } END { exit !found }' sdk-release.tsv; then
+            echo 'available=true' >> "$GITHUB_OUTPUT"
+          else
+            echo 'available=false' >> "$GITHUB_OUTPUT"
+            echo "$PLATFORM has no published release; execution remains unverified for this starter revision."
+          fi
+      - name: Download, build, and test the upload package
+        if: steps.release.outputs.available == 'true'
+        run: |
+          ./bot5 setup
+          ./bot5 build my_bot.cpp
+          ./bot5 test my_bot.bot.json --seconds 0.05
+          ./bot5 python learn.py --trials 2 --seconds 0.05
+          git diff --exit-code
