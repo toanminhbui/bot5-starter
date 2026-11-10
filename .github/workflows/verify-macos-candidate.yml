@@ -9,7 +9,8 @@ on:
         type: string
 
 permissions:
-  contents: read
+  # Draft release assets require push access; the token is used only for download.
+  contents: write
 
 jobs:
   native-verification:
