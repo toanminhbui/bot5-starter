@@ -46,6 +46,9 @@ Each learning run uses a fresh upload version.
 This is an introductory parameter search. It does not train a neural network or
 produce a competitive fighter. Change the controller and reward as you learn.
 
+Follow the [training guide](TRAINING.md) for a first run, configurable options,
+reward and controller changes, result interpretation, and upload steps.
+
 ## Upload
 
 Sign in at [bot5.tbui.dev](https://bot5.tbui.dev), verify your email, and upload
