@@ -1,0 +1,61 @@
+name: Verify Apple Silicon creator candidate
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_asset_id:
+        description: Draft release asset ID for the pinned Mac creator ZIP
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  native-verification:
+    if: github.repository == 'toanminhbui/bot5-starter'
+    runs-on: macos-15
+    timeout-minutes: 15
+    steps:
+      - name: Confirm native Apple Silicon host
+        run: |
+          test "$(uname -s)" = Darwin
+          test "$(uname -m)" = arm64
+          sw_vers
+
+      - name: Download the pinned candidate from its draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+          RELEASE_ASSET_ID: ${{ inputs.release_asset_id }}
+          EXPECTED_SHA256: f89b60c630ffbb4d12946da120b14a4592ea70e1f5b73dae0573e7ebc46d2924
+          EXPECTED_BYTES: '252066959'
+        run: |
+          case "$RELEASE_ASSET_ID" in
+            ''|*[!0-9]*) echo 'Provide a numeric draft release asset ID.' >&2; exit 1 ;;
+          esac
+          archive="$RUNNER_TEMP/creator-macos-candidate.zip"
+          gh api --hostname github.com \
+            -H 'Accept: application/octet-stream' \
+            "repos/$REPOSITORY/releases/assets/$RELEASE_ASSET_ID" > "$archive"
+          test "$(wc -c < "$archive" | tr -d '[:space:]')" = "$EXPECTED_BYTES"
+          printf '%s  %s\n' "$EXPECTED_SHA256" "$archive" | shasum -a 256 -c -
+
+      - name: Execute the complete kit and its native verifier
+        run: |
+          destination="$RUNNER_TEMP/creator-candidate"
+          mkdir "$destination"
+          ditto -x -k "$RUNNER_TEMP/creator-macos-candidate.zip" "$destination"
+          cd "$destination/bot5-creator-sdk"
+          chmod u+x bot5 runtime/python/bin/python3.12
+          ./bot5 verify --output "$RUNNER_TEMP/creator-verification.json"
+
+      - name: Retain the source-bound native execution report
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: macos-native-verification-${{ github.run_id }}
+          path: ${{ runner.temp }}/creator-verification.json
+          if-no-files-found: warn
+          retention-days: 14
+          compression-level: 0
