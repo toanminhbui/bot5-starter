@@ -13,9 +13,9 @@ The first build downloads the compiler, engine, and Python automatically. Later
 builds and tests work offline. No account, compiler installation, or Python setup
 is needed. Git, curl, and tar must be available.
 
-Use Ubuntu 24.04 or compatible Linux on x86-64, including Windows WSL2.
-Apple Silicon requires macOS 15 or newer and a verified Mac release.
-On Windows, clone inside your WSL2 Linux home folder.
+Use Ubuntu 24.04 or compatible Linux on x86-64, including Windows WSL2. On Windows, clone inside your WSL2 Linux home folder.
+
+The Apple Silicon release is awaiting native verification.
 
 ## Change your bot
 
@@ -40,6 +40,7 @@ This small reward-based search tunes the example's controller gains using time
 spent upright. It compiles once, evaluates configurations in WebAssembly, and
 checks the winner on separate seeds. Results and the tested `best.bot.json` go
 in a new `runs/` folder. No additional packages or GPU are needed.
+Upload `best.bot.json` directly to preserve the selected gains.
 
 This is an introductory parameter search. It does not train a neural network or
 produce a competitive fighter. Change the controller and reward as you learn.
