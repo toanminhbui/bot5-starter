@@ -127,7 +127,12 @@ held-out seeds and continue treating them as unseen evaluation data.
 
 ## 5. Change the experiment
 
-### Controller behavior: edit your C++
+### Train a custom controller
+
+Follow the README's [custom controller instructions](README.md#write-a-custom-controller)
+for the interface and [build options](README.md#build-and-configure) for
+configuration and packaging. The learner accepts another source through
+`--source`.
 
 Copy the example so you can compare it with your changes:
 
