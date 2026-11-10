@@ -15,7 +15,7 @@ is needed. Git, curl, and tar must be available.
 
 Use Ubuntu 24.04 or compatible Linux on x86-64, including Windows WSL2. On Windows, clone inside your WSL2 Linux home folder.
 
-The Apple Silicon release is awaiting native verification.
+Use an Apple Silicon Mac with macOS 15 or newer.
 
 ## Change your bot
 
@@ -41,6 +41,7 @@ spent upright. It compiles once, evaluates configurations in WebAssembly, and
 checks the winner on separate seeds. Results and the tested `best.bot.json` go
 in a new `runs/` folder. No additional packages or GPU are needed.
 Upload `best.bot.json` directly to preserve the selected gains.
+Each learning run uses a fresh upload version.
 
 This is an introductory parameter search. It does not train a neural network or
 produce a competitive fighter. Change the controller and reward as you learn.
@@ -49,7 +50,7 @@ produce a competitive fighter. Change the controller and reward as you learn.
 
 Sign in at [bot5.tbui.dev](https://bot5.tbui.dev), verify your email, and upload
 the tested **`.bot.json`**. A valid local test checks execution; it does not
-guarantee a win. Rebuild with `--version 2`, then `3`, for updates.
+guarantee a win. For manual C++ builds, use a new `--version` for each uploaded update.
 
 Run `./bot5 --help` for commands and `./bot5 python learn.py --help` for search
 options. `./bot5 setup` downloads the tools without building a bot.

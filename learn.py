@@ -66,6 +66,8 @@ def evaluate(root, package, seconds, seeds):
 def search(root, *, source, output, trials, seconds, seed):
     """Compile once, search on training seeds, then test untouched held-out seeds."""
     output.mkdir(parents=True, exist_ok=False)
+    # Upload versions stay fresh across runs; the seed still controls all gains.
+    run_version = datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ') + '-' + secrets.token_hex(6)
     source_hash = hashlib.sha256(source.read_bytes()).hexdigest()
     base_path = output / 'base.bot.json'
     process = subprocess.run(['sh', str(root / 'bot5'), 'build', str(source), '--name',
@@ -95,14 +97,15 @@ def search(root, *, source, output, trials, seconds, seed):
                          for key, low, high in [('kp', 1., 300.), ('kd', .1, 60.)]}
             candidate = copy.deepcopy(base)
             candidate['bundle']['configuration'] = gains
-            candidate['manifest']['version'] = str(trial + 1)
+            candidate['manifest']['version'] = run_version + '-' + str(trial + 1)
             path = candidates / ('trial-' + str(trial + 1).zfill(3) + '.bot.json')
             write_json(path, candidate)
             tested_hash = hashlib.sha256(path.read_bytes()).hexdigest()
             measured = evaluate(root, path, seconds, training_seeds)
             if hashlib.sha256(path.read_bytes()).hexdigest() != tested_hash:
                 raise ValueError('A tested package changed during evaluation.')
-            record = {'trial': trial + 1, 'configuration': gains, 'package': str(path.relative_to(output)),
+            record = {'trial': trial + 1, 'version': candidate['manifest']['version'],
+                      'configuration': gains, 'package': str(path.relative_to(output)),
                       'package_sha256': tested_hash, **measured}
             stream.write(json.dumps(record, sort_keys=True, allow_nan=False) + '\n')
             stream.flush()
@@ -123,6 +126,7 @@ def search(root, *, source, output, trials, seconds, seed):
     report = {'format': 'bot5_parameter_search_v1', 'algorithm': 'reward_based_parameter_search',
               'reward': 'Own strict-posture seconds, clipped to elapsed time and the episode budget; invalid episodes excluded.',
               'source_sha256': source_hash, 'seconds': seconds, 'sampling_seed': seed,
+              'run_version': run_version,
               'training_seeds': training_seeds, 'held_out_seeds': held_out_seeds,
               'trials': trials, 'baseline_mean_reward': baseline_reward, 'selected': best,
               'held_out': held_out, 'trained_fighting_policy': False}
